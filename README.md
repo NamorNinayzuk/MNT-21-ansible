@@ -55,7 +55,7 @@ lighthouse:
       ansible.builtin.add_host:
         name: "{{ item['network_interfaces'][0]['primary_v4_address']['one_to_one_nat']['address'] }}"
         group: "{{ item['name'] }}"
-        ansible_ssh_user: "admin"
+        ansible_ssh_user: "kali"
       loop: "{{ _yc_instances }}"
       changed_when: false
 ```
