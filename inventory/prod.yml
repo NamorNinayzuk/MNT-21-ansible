@@ -1,0 +1,8 @@
+---
+clickhouse:
+  hosts:
+vector:
+  hosts:
+lighthouse:
+  hosts:
+...
