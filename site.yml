@@ -1,0 +1,79 @@
+---
+- name: Generate dynamic inventory
+  gather_facts: false
+  hosts: localhost
+  become: false
+  tasks:
+    - name: Get instances from Yandex.Cloud CLI
+      ansible.builtin.command: "yc compute instance list --format=yaml"
+      register: yc_instances
+      failed_when: yc_instances.rc != 0
+      changed_when: false
+    - name: Set instances to facts
+      ansible.builtin.set_fact:
+        _yc_instances: "{{ yc_instances.stdout | from_yaml }}"
+    - name: Add instances IP to hosts
+      ansible.builtin.add_host:
+        name: "{{ item['network_interfaces'][0]['primary_v4_address']['one_to_one_nat']['address'] }}"
+        group: "{{ item['name'] }}"
+        ansible_ssh_user: "centos"
+      loop: "{{ _yc_instances }}"
+      changed_when: false
+    - name: Check instance count
+      ansible.builtin.debug:
+        msg: "Total instance count: {{ _yc_instances | length }}"
+      failed_when: _yc_instances | length == 0
+- name: Approve SSH fingerprint
+  gather_facts: false
+  hosts: all
+  tasks:
+    - name: Check known_hosts for
+      ansible.builtin.command: ssh-keygen -F {{ inventory_hostname }}
+      register: check_entry_in_known_hosts
+      failed_when: false
+      changed_when: false
+      ignore_errors: true
+      delegate_to: localhost
+    - name: Skip question for adding host key
+      ansible.builtin.set_fact:
+        # StrictHostKeyChecking can be "accept-new"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+      when: check_entry_in_known_hosts.rc == 1
+    - name: Add SSH fingerprint to known host
+      ansible.builtin.setup:
+      when: check_entry_in_known_hosts.rc == 1
+
+- name: Install Clickhouse
+  hosts: clickhouse
+  roles:
+    - clickhouse
+  post_tasks:
+    - name: Create tables
+      ansible.builtin.command: "clickhouse-client --host 127.0.0.1 -q 'CREATE TABLE logs.file_log ({{ file_log_structure }}) ENGINE = Log();'"
+      register: create_tbl
+      failed_when: create_tbl.rc != 0 and create_tbl.rc != 57
+      changed_when: create_tbl.rc == 0
+
+- name: Install Vector
+  hosts: vector
+  roles:
+    - vector-role
+
+- name: Install Lighthouse
+  hosts: lighthouse
+  roles:
+    - lighthouse-role
+
+- name: Echo instances hint
+  hosts: localhost
+  tasks:
+    - name: Clickhouse IP
+      ansible.builtin.debug:
+        msg: "Clickhouse IP: {{ groups['clickhouse'][0] }}"
+    - name: Vector IP
+      ansible.builtin.debug:
+        msg: "Vector IP    : {{ groups['vector'][0] }}"
+    - name: Lighthouse IP
+      ansible.builtin.debug:
+        msg: "Clickhouse IP: {{ groups['lighthouse'][0] }}"
+...
